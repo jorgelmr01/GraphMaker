@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphMaker - Beautiful Graphs for Presentations</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Top Bar -->
+        <header class="topbar">
+            <div class="topbar-brand">
+                <svg class="topbar-logo" viewBox="0 0 32 32" fill="none"><rect x="2" y="18" width="6" height="12" rx="1.5" fill="#6366f1"/><rect x="10" y="12" width="6" height="18" rx="1.5" fill="#8b5cf6"/><rect x="18" y="6" width="6" height="24" rx="1.5" fill="#a78bfa"/><rect x="26" y="2" width="6" height="28" rx="1.5" fill="#c4b5fd"/></svg>
+                <span class="topbar-title">GraphMaker</span>
+            </div>
+            <div class="topbar-steps">
+                <div class="step-indicator active" data-step="1"><span class="step-num">1</span> Upload</div>
+                <div class="step-arrow">→</div>
+                <div class="step-indicator" data-step="2"><span class="step-num">2</span> Prepare</div>
+                <div class="step-arrow">→</div>
+                <div class="step-indicator" data-step="3"><span class="step-num">3</span> Design</div>
+                <div class="step-arrow">→</div>
+                <div class="step-indicator" data-step="4"><span class="step-num">4</span> Export</div>
+            </div>
+            <button class="btn-reset" id="btnStartOver" title="Start over">↺ New</button>
+        </header>
+
+        <!-- STEP 1: Upload -->
+        <section class="step-panel" id="step1" style="display:flex">
+            <div class="upload-area" id="dropZone">
+                <div class="upload-icon">
+                    <svg viewBox="0 0 64 64" fill="none" width="80" height="80"><rect x="8" y="8" width="48" height="48" rx="8" stroke="#6366f1" stroke-width="2.5" fill="#eef2ff"/><path d="M32 20v18M24 28l8-8 8 8" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 42h24" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/></svg>
+                </div>
+                <h2>Drop your Excel or CSV file here</h2>
+                <p class="upload-sub">or click to browse your files</p>
+                <p class="upload-formats">Supports .xlsx, .xls, .csv</p>
+                <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+            </div>
+            <div class="upload-demo">
+                <button class="btn-secondary" id="btnDemoData">Try with sample data</button>
+            </div>
+        </section>
+
+        <!-- STEP 2: Prepare Data (Pivot) -->
+        <section class="step-panel" id="step2" style="display:none">
+            <div class="prepare-layout">
+                <div class="prepare-sidebar">
+                    <h3>Data Columns</h3>
+                    <p class="help-text">Drag columns to the areas below, or click to add them.</p>
+                    <div class="column-list" id="columnList"></div>
+
+                    <div class="pivot-zone">
+                        <label>Group By (X-Axis / Categories)</label>
+                        <div class="pivot-drop" id="pivotRows" data-role="rows">
+                            <span class="pivot-placeholder">Drop a column here</span>
+                        </div>
+                    </div>
+                    <div class="pivot-zone">
+                        <label>Values (Y-Axis / Measures)</label>
+                        <div class="pivot-drop" id="pivotValues" data-role="values">
+                            <span class="pivot-placeholder">Drop a column here</span>
+                        </div>
+                    </div>
+                    <div class="pivot-zone">
+                        <label>Split By (Series / Legend) <span class="optional-tag">optional</span></label>
+                        <div class="pivot-drop" id="pivotColumns" data-role="columns">
+                            <span class="pivot-placeholder">Drop a column here</span>
+                        </div>
+                    </div>
+                    <div class="pivot-zone">
+                        <label>Filter <span class="optional-tag">optional</span></label>
+                        <div class="pivot-drop" id="pivotFilters" data-role="filters">
+                            <span class="pivot-placeholder">Drop a column here</span>
+                        </div>
+                    </div>
+                    <div id="filterControls"></div>
+                </div>
+                <div class="prepare-main">
+                    <div class="data-preview-header">
+                        <h3>Data Preview</h3>
+                        <span class="row-count" id="rowCount"></span>
+                    </div>
+                    <div class="table-wrap" id="dataTableWrap">
+                        <table id="dataTable"><thead></thead><tbody></tbody></table>
+                    </div>
+                    <div class="prepare-actions">
+                        <button class="btn-primary" id="btnToDesign">Continue to Chart Design →</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- STEP 3: Design Chart -->
+        <section class="step-panel" id="step3" style="display:none">
+            <div class="design-layout">
+                <div class="design-sidebar">
+                    <div class="sidebar-section">
+                        <h3>Chart Type</h3>
+                        <div class="chart-type-grid" id="chartTypeGrid"></div>
+                    </div>
+                    <div class="sidebar-section">
+                        <h3>Title & Labels</h3>
+                        <label class="field-label">Chart Title</label>
+                        <input type="text" id="chartTitle" class="field-input" placeholder="My Chart">
+                        <label class="field-label">Subtitle</label>
+                        <input type="text" id="chartSubtitle" class="field-input" placeholder="Optional subtitle">
+                        <label class="field-label">X-Axis Label</label>
+                        <input type="text" id="xAxisLabel" class="field-input" placeholder="Auto">
+                        <label class="field-label">Y-Axis Label</label>
+                        <input type="text" id="yAxisLabel" class="field-input" placeholder="Auto">
+                    </div>
+                    <div class="sidebar-section">
+                        <h3>Appearance</h3>
+                        <label class="field-label">Color Palette</label>
+                        <div class="palette-grid" id="paletteGrid"></div>
+                        <label class="field-label">Font Size</label>
+                        <div class="range-row">
+                            <input type="range" id="fontSize" min="10" max="28" value="16" class="range-input">
+                            <span id="fontSizeVal" class="range-val">16px</span>
+                        </div>
+                        <label class="field-label">Background</label>
+                        <div class="bg-options">
+                            <button class="bg-opt active" data-bg="#ffffff">White</button>
+                            <button class="bg-opt" data-bg="#f8fafc">Light Gray</button>
+                            <button class="bg-opt" data-bg="#1e293b">Dark</button>
+                            <button class="bg-opt" data-bg="transparent">Transparent</button>
+                        </div>
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="showLegend" checked><label for="showLegend">Show Legend</label>
+                        </div>
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="showDataLabels"><label for="showDataLabels">Show Data Labels</label>
+                        </div>
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="showGrid" checked><label for="showGrid">Show Grid Lines</label>
+                        </div>
+                        <label class="field-label">Legend Position</label>
+                        <select id="legendPosition" class="field-input">
+                            <option value="bottom">Bottom</option>
+                            <option value="top">Top</option>
+                            <option value="left">Left</option>
+                            <option value="right">Right</option>
+                        </select>
+                    </div>
+                    <div class="sidebar-section" id="ganttOptions" style="display:none">
+                        <h3>Gantt Options</h3>
+                        <label class="field-label">Task Column</label>
+                        <select id="ganttTask" class="field-input"></select>
+                        <label class="field-label">Start Date Column</label>
+                        <select id="ganttStart" class="field-input"></select>
+                        <label class="field-label">End Date Column</label>
+                        <select id="ganttEnd" class="field-input"></select>
+                        <label class="field-label">Category Column <span class="optional-tag">optional</span></label>
+                        <select id="ganttCategory" class="field-input"><option value="">None</option></select>
+                        <label class="field-label">Progress Column (%) <span class="optional-tag">optional</span></label>
+                        <select id="ganttProgress" class="field-input"><option value="">None</option></select>
+                    </div>
+                </div>
+                <div class="design-main">
+                    <div class="chart-container" id="chartContainer">
+                        <div id="chartDiv" style="width:100%;height:100%"></div>
+                    </div>
+                    <div class="design-actions">
+                        <button class="btn-secondary" id="btnBackToPrepare">← Back to Data</button>
+                        <button class="btn-primary" id="btnToExport">Export this Chart →</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- STEP 4: Export -->
+        <section class="step-panel" id="step4" style="display:none">
+            <div class="export-layout">
+                <div class="export-sidebar">
+                    <h3>Export Settings</h3>
+                    <label class="field-label">Preset Size</label>
+                    <select id="exportPreset" class="field-input">
+                        <option value="1920x1080">Full HD (1920×1080)</option>
+                        <option value="2560x1440">2K QHD (2560×1440)</option>
+                        <option value="3840x2160">4K UHD (3840×2160)</option>
+                        <option value="1280x720">HD (1280×720)</option>
+                        <option value="1024x768">PPT Classic (1024×768)</option>
+                        <option value="custom">Custom Size</option>
+                    </select>
+                    <div id="customSizeFields" style="display:none">
+                        <label class="field-label">Width (px)</label>
+                        <input type="number" id="exportWidth" class="field-input" value="1920" min="200" max="7680">
+                        <label class="field-label">Height (px)</label>
+                        <input type="number" id="exportHeight" class="field-input" value="1080" min="200" max="4320">
+                    </div>
+                    <label class="field-label">Format</label>
+                    <select id="exportFormat" class="field-input">
+                        <option value="png">PNG (Recommended for PPT)</option>
+                        <option value="svg">SVG (Vector)</option>
+                    </select>
+                    <label class="field-label">Scale Factor</label>
+                    <select id="exportScale" class="field-input">
+                        <option value="1">1× (Standard)</option>
+                        <option value="2" selected>2× (Retina / Recommended)</option>
+                        <option value="3">3× (Ultra Sharp)</option>
+                    </select>
+                    <p class="help-text">Higher scale = sharper text when resized in PowerPoint. 2× is recommended.</p>
+                    <div class="export-buttons">
+                        <button class="btn-primary btn-lg" id="btnDownload">⬇ Download Image</button>
+                        <button class="btn-secondary btn-lg" id="btnCopyClipboard">📋 Copy to Clipboard</button>
+                    </div>
+                    <p class="help-text" id="exportStatus"></p>
+                </div>
+                <div class="export-main">
+                    <h3>Preview</h3>
+                    <div class="export-preview-wrap">
+                        <div id="exportPreview"></div>
+                    </div>
+                    <div class="export-actions">
+                        <button class="btn-secondary" id="btnBackToDesign">← Back to Design</button>
+                        <button class="btn-secondary" id="btnMakeAnother">+ Make Another Chart</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
