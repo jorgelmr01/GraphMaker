@@ -212,9 +212,17 @@
                     <p class="help-text" id="exportStatus"></p>
                 </div>
                 <div class="export-main">
-                    <h3>Preview</h3>
+                    <div class="preview-header">
+                        <h3>Preview</h3>
+                        <span class="resize-hint" id="resizeDims">Drag edges to resize</span>
+                    </div>
                     <div class="export-preview-wrap">
-                        <div id="exportPreview"></div>
+                        <div id="resizableChart" class="resizable-chart">
+                            <div id="exportPreview"></div>
+                            <div class="resize-handle resize-handle-e" data-dir="e"></div>
+                            <div class="resize-handle resize-handle-s" data-dir="s"></div>
+                            <div class="resize-handle resize-handle-se" data-dir="se"></div>
+                        </div>
                     </div>
                     <div class="export-actions">
                         <button class="btn-secondary" id="btnBackToDesign">← Back to Design</button>

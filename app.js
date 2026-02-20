@@ -1116,6 +1116,239 @@ function renderGanttChart() {
     state.chartInstance.setOption(option);
 }
 
+// ── PPT-Optimized Export Scaling ─────────────────────────────
+// The design view renders at ~650px wide. Exported charts must have
+// proportionally larger text so they remain readable in PowerPoint.
+// PPT standard: title 28-36pt, labels 16-22pt, ticks 14-18pt.
+
+function scaleOptionForExport(rawOption, targetWidth, targetHeight) {
+    // Deep clone - preserve structure but functions are lost via JSON
+    const opt = JSON.parse(JSON.stringify(rawOption));
+
+    // Reference: design view is roughly 650px wide.
+    // We scale based on the shorter dimension to ensure readability
+    // even in wide-aspect charts. Minimum scale 1.5 for small exports.
+    const refWidth = 650;
+    const scaleFactor = Math.max(1.5, targetWidth / refWidth);
+
+    // PPT-optimized base sizes (in "design px" that get multiplied by scaleFactor)
+    // These are deliberately large - PPT text must be readable from a distance
+    const pptSizes = {
+        title: 22,
+        subtitle: 16,
+        axisName: 15,
+        axisLabel: 14,
+        legend: 14,
+        dataLabel: 13,
+        tooltip: 14,
+    };
+
+    // Scale a single value
+    const s = (v) => Math.round(v * scaleFactor);
+    const sPad = (arr) => {
+        if (Array.isArray(arr)) return arr.map(v => typeof v === 'number' ? s(v) : v);
+        if (typeof arr === 'number') return s(arr);
+        return arr;
+    };
+
+    // Helper: scale textStyle fontSize in an object
+    function scaleTextStyle(obj, targetSize) {
+        if (!obj) return;
+        if (obj.fontSize !== undefined) obj.fontSize = s(targetSize || obj.fontSize);
+        if (obj.lineHeight !== undefined) obj.lineHeight = s(obj.lineHeight);
+    }
+
+    // --- Title ---
+    if (opt.title) {
+        const t = Array.isArray(opt.title) ? opt.title[0] : opt.title;
+        const hasTitle = (t.text || '').trim().length > 0;
+        if (t.textStyle) {
+            t.textStyle.fontSize = s(pptSizes.title);
+            t.textStyle.fontWeight = 700;
+        }
+        if (t.subtextStyle) {
+            t.subtextStyle.fontSize = s(pptSizes.subtitle);
+        }
+        // Snug title positioning
+        t.top = s(6);
+    }
+
+    // --- Legend ---
+    if (opt.legend) {
+        const leg = Array.isArray(opt.legend) ? opt.legend[0] : opt.legend;
+        if (leg && leg.show !== false) {
+            if (leg.textStyle) leg.textStyle.fontSize = s(pptSizes.legend);
+            leg.itemGap = s(12);
+            leg.itemWidth = s(12);
+            leg.itemHeight = s(8);
+            if (typeof leg.bottom === 'number') leg.bottom = s(6);
+            if (typeof leg.top === 'number') leg.top = s(6);
+            if (Array.isArray(opt.legend)) opt.legend[0] = leg;
+            else opt.legend = leg;
+        }
+    }
+
+    // --- Axes: scale text, detect which have names ---
+    let hasYAxisName = false;
+    let hasXAxisName = false;
+    const scaleAxis = (axis, isY) => {
+        if (!axis) return;
+        const axes = Array.isArray(axis) ? axis : [axis];
+        for (const ax of axes) {
+            if (ax.axisLabel) {
+                ax.axisLabel.fontSize = s(pptSizes.axisLabel);
+                if (ax.axisLabel.width) ax.axisLabel.width = s(ax.axisLabel.width);
+            }
+            if (ax.nameTextStyle) {
+                ax.nameTextStyle.fontSize = s(pptSizes.axisName);
+            }
+            // Use 'middle' for export - centers along axis, avoids edge clipping
+            if (ax.name) {
+                ax.nameLocation = 'middle';
+                ax.nameGap = s(isY ? 45 : 30);
+                if (isY) hasYAxisName = true;
+                else hasXAxisName = true;
+            }
+        }
+    };
+    scaleAxis(opt.xAxis, false);
+    scaleAxis(opt.yAxis, true);
+
+    // --- Grid: auto-adapt. containLabel handles tick labels. ---
+    // Minimal padding; extra only for title/legend/axis-names.
+    const scaleGrid = (g) => {
+        if (!g) return g;
+        g.containLabel = true;
+        g.top = s(35);
+        g.bottom = s(hasXAxisName ? 45 : 35);
+        g.left = s(hasYAxisName ? 25 : 10);
+        g.right = s(10);
+        return g;
+    };
+    if (opt.grid) {
+        if (Array.isArray(opt.grid)) opt.grid = opt.grid.map(scaleGrid);
+        else opt.grid = scaleGrid(opt.grid);
+    }
+
+    // --- Radar ---
+    if (opt.radar) {
+        const radars = Array.isArray(opt.radar) ? opt.radar : [opt.radar];
+        for (const r of radars) {
+            if (r.axisName) r.axisName.fontSize = s(pptSizes.axisLabel);
+            // Legacy
+            if (r.name && r.name.textStyle) r.name.textStyle.fontSize = s(pptSizes.axisLabel);
+        }
+    }
+
+    // --- Visual Map ---
+    if (opt.visualMap) {
+        const vms = Array.isArray(opt.visualMap) ? opt.visualMap : [opt.visualMap];
+        for (const vm of vms) {
+            if (vm.textStyle) vm.textStyle.fontSize = s(pptSizes.axisLabel);
+            if (typeof vm.bottom === 'number') vm.bottom = s(vm.bottom);
+            if (typeof vm.itemWidth === 'number') vm.itemWidth = s(vm.itemWidth);
+            if (typeof vm.itemHeight === 'number') vm.itemHeight = s(vm.itemHeight);
+        }
+    }
+
+    // --- Series ---
+    if (opt.series) {
+        const seriesArr = Array.isArray(opt.series) ? opt.series : [opt.series];
+        for (const ser of seriesArr) {
+            // Data labels
+            if (ser.label) {
+                if (ser.label.fontSize !== undefined) ser.label.fontSize = s(pptSizes.dataLabel);
+                if (ser.label.lineHeight) ser.label.lineHeight = s(ser.label.lineHeight);
+            }
+            // Pie / donut
+            if (ser.type === 'pie' || ser.type === 'funnel') {
+                if (ser.label) ser.label.fontSize = s(pptSizes.dataLabel + 1);
+            }
+            // Treemap
+            if (ser.type === 'treemap') {
+                if (ser.label) ser.label.fontSize = s(pptSizes.dataLabel);
+            }
+            // Line width
+            if (ser.lineStyle && ser.lineStyle.width) {
+                ser.lineStyle.width = Math.max(2, s(ser.lineStyle.width));
+            }
+            // Default line width for line/area charts
+            if (ser.type === 'line' && !ser.lineStyle) {
+                ser.lineStyle = { width: Math.round(2.5 * scaleFactor) };
+            }
+            // Symbol size for scatter
+            if (typeof ser.symbolSize === 'number') {
+                ser.symbolSize = s(ser.symbolSize);
+            }
+            // Item style border
+            if (ser.itemStyle) {
+                if (typeof ser.itemStyle.borderWidth === 'number') {
+                    ser.itemStyle.borderWidth = Math.round(ser.itemStyle.borderWidth * scaleFactor);
+                }
+                if (typeof ser.itemStyle.borderRadius === 'number') {
+                    ser.itemStyle.borderRadius = s(ser.itemStyle.borderRadius);
+                }
+            }
+        }
+    }
+
+    // --- Global textStyle ---
+    if (opt.textStyle) {
+        if (opt.textStyle.fontSize) opt.textStyle.fontSize = s(pptSizes.axisLabel);
+    }
+
+    // --- Tooltip (scale for consistency, though less critical for export) ---
+    if (opt.tooltip) {
+        const tips = Array.isArray(opt.tooltip) ? opt.tooltip : [opt.tooltip];
+        for (const t of tips) {
+            if (t.textStyle) t.textStyle.fontSize = s(pptSizes.tooltip);
+        }
+    }
+
+    // --- Re-apply formatters lost during JSON serialization ---
+    // Value axis formatter (abbreviate large numbers)
+    const reapplyFormatter = (axes) => {
+        if (!axes) return;
+        const arr = Array.isArray(axes) ? axes : [axes];
+        for (const ax of arr) {
+            if (ax.type === 'value' && ax.axisLabel) {
+                ax.axisLabel.formatter = v => abbreviate(v);
+            }
+        }
+    };
+    reapplyFormatter(opt.xAxis);
+    reapplyFormatter(opt.yAxis);
+
+    // Series data label formatters
+    if (opt.series) {
+        const seriesArr = Array.isArray(opt.series) ? opt.series : [opt.series];
+        for (const ser of seriesArr) {
+            if (ser.label && ser.label.show) {
+                if (ser.type === 'pie') {
+                    ser.label.formatter = '{b}: {d}%';
+                } else if (!ser.label.formatter || typeof ser.label.formatter !== 'string') {
+                    ser.label.formatter = p => {
+                        const v = typeof p.value === 'number' ? p.value : (Array.isArray(p.value) ? p.value[1] : p.value);
+                        return abbreviate(v);
+                    };
+                }
+            }
+        }
+    }
+
+    return opt;
+}
+
+// Rebuild export chart with scaled options
+function renderExportChart(container, width, height, scale, format) {
+    const rawOption = state.chartInstance ? state.chartInstance.getOption() : {};
+    const scaledOption = scaleOptionForExport(rawOption, width, height);
+    const renderer = format === 'svg' ? 'svg' : 'svg'; // always SVG for crisp text
+    const chart = echarts.init(container, null, { renderer, width, height });
+    chart.setOption(scaledOption);
+    return chart;
+}
+
 // ── Step 4: Export ───────────────────────────────────────────
 
 function initExportControls() {
@@ -1133,6 +1366,83 @@ function initExportControls() {
 
     document.getElementById('btnDownload').addEventListener('click', downloadImage);
     document.getElementById('btnCopyClipboard').addEventListener('click', copyToClipboard);
+
+    initResizable();
+}
+
+// ── Drag-to-resize chart in export preview ──────────────────
+function initResizable() {
+    const container = document.getElementById('resizableChart');
+    if (!container) return;
+
+    let dragging = null; // 'e', 's', or 'se'
+    let startX, startY, startW, startH;
+
+    const handles = container.querySelectorAll('.resize-handle');
+    handles.forEach(h => {
+        h.addEventListener('mousedown', e => {
+            e.preventDefault();
+            dragging = h.dataset.dir;
+            const rect = container.getBoundingClientRect();
+            startX = e.clientX;
+            startY = e.clientY;
+            startW = rect.width;
+            startH = rect.height;
+            document.body.style.cursor = dragging === 'se' ? 'se-resize' : dragging + '-resize';
+            document.body.style.userSelect = 'none';
+        });
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        let newW = startW, newH = startH;
+        if (dragging === 'e' || dragging === 'se') newW = Math.max(200, startW + dx);
+        if (dragging === 's' || dragging === 'se') newH = Math.max(120, startH + dy);
+        container.style.width = Math.round(newW) + 'px';
+        container.style.height = Math.round(newH) + 'px';
+
+        // Calculate the actual export dimensions based on preview scale
+        // The preview shows a scaled-down version; we compute the real ratio
+        const { width: curExportW, height: curExportH } = getExportDimensions();
+        const scaleRatioW = curExportW / startW;
+        const scaleRatioH = curExportH / startH;
+        const exportW = Math.round(newW * scaleRatioW);
+        const exportH = Math.round(newH * scaleRatioH);
+        document.getElementById('resizeDims').textContent = `${exportW} × ${exportH} px`;
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        const rect = container.getBoundingClientRect();
+        const { width: curExportW, height: curExportH } = getExportDimensions();
+
+        // Compute ratio from original preview size to export size
+        const previewImg = document.querySelector('#exportPreview img');
+        if (previewImg) {
+            const origPreviewW = previewImg.naturalWidth;
+            const origPreviewH = previewImg.naturalHeight;
+            // The natural size is export * scale. The displayed size was startW.
+            // New export dimensions based on drag
+            const scale = parseInt(document.getElementById('exportScale').value) || 2;
+            const newExportW = Math.round(rect.width * (origPreviewW / scale) / startW || curExportW);
+            const newExportH = Math.round(rect.height * (origPreviewH / scale) / startH || curExportH);
+
+            // Switch to custom and set values
+            document.getElementById('exportPreset').value = 'custom';
+            document.getElementById('customSizeFields').style.display = 'block';
+            document.getElementById('exportWidth').value = Math.max(200, Math.min(7680, newExportW));
+            document.getElementById('exportHeight').value = Math.max(200, Math.min(4320, newExportH));
+        }
+
+        dragging = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+
+        // Regenerate preview with new dimensions
+        generateExportPreview();
+    });
 }
 
 function getExportDimensions() {
@@ -1153,7 +1463,6 @@ function generateExportPreview() {
     const format = document.getElementById('exportFormat').value;
     const preview = document.getElementById('exportPreview');
 
-    // Create offscreen chart
     const offDiv = document.createElement('div');
     offDiv.style.width = width + 'px';
     offDiv.style.height = height + 'px';
@@ -1161,9 +1470,7 @@ function generateExportPreview() {
     offDiv.style.left = '-9999px';
     document.body.appendChild(offDiv);
 
-    const offChart = echarts.init(offDiv, null, { renderer: 'svg', width, height });
-    const currentOption = state.chartInstance ? state.chartInstance.getOption() : {};
-    offChart.setOption(currentOption);
+    const offChart = renderExportChart(offDiv, width, height, scale, format);
 
     setTimeout(() => {
         if (format === 'svg') {
@@ -1175,7 +1482,7 @@ function generateExportPreview() {
         }
         offChart.dispose();
         offDiv.remove();
-    }, 300);
+    }, 400);
 }
 
 function downloadImage() {
@@ -1191,8 +1498,7 @@ function downloadImage() {
     offDiv.style.left = '-9999px';
     document.body.appendChild(offDiv);
 
-    const offChart = echarts.init(offDiv, null, { renderer: 'svg', width, height });
-    offChart.setOption(state.chartInstance.getOption());
+    const offChart = renderExportChart(offDiv, width, height, scale, format);
 
     setTimeout(() => {
         let dataUrl, filename;
@@ -1213,7 +1519,7 @@ function downloadImage() {
         offChart.dispose();
         offDiv.remove();
         status.textContent = `Downloaded ${filename} (${width*scale}×${height*scale} pixels)`;
-    }, 300);
+    }, 400);
 }
 
 async function copyToClipboard() {
@@ -1228,8 +1534,11 @@ async function copyToClipboard() {
     offDiv.style.left = '-9999px';
     document.body.appendChild(offDiv);
 
+    // For clipboard we need canvas renderer
+    const rawOption = state.chartInstance ? state.chartInstance.getOption() : {};
+    const scaledOption = scaleOptionForExport(rawOption, width, height);
     const offChart = echarts.init(offDiv, null, { renderer: 'canvas', width, height, devicePixelRatio: scale });
-    offChart.setOption(state.chartInstance.getOption());
+    offChart.setOption(scaledOption);
 
     setTimeout(async () => {
         try {
@@ -1242,7 +1551,7 @@ async function copyToClipboard() {
         }
         offChart.dispose();
         offDiv.remove();
-    }, 300);
+    }, 400);
 }
 
 // Make functions available globally for inline event handlers
